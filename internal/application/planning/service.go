@@ -110,6 +110,7 @@ func (s *Service) GenerateDue(ctx context.Context, horizon time.Time, assignee s
 	if err != nil {
 		return nil, err
 	}
+	calendar := newGenerationCalendar(plans)
 	created := make([]maintenance.Plan, 0)
 	now := s.clock.Now().UTC()
 	for _, equipmentItem := range equipmentItems {
@@ -135,16 +136,17 @@ func (s *Service) GenerateDue(ctx context.Context, horizon time.Time, assignee s
 			if due.After(horizon.UTC()) {
 				continue
 			}
-			start := time.Date(due.Year(), due.Month(), due.Day(), 1, 0, 0, 0, time.UTC)
+			window := calendar.Next(equipmentItem.ID, due)
 			key := fmt.Sprintf("%s/%s/v%d/%s", equipmentItem.ID, program.ID, program.Version, due.Format("2006-01-02"))
 			plan, wasCreated, createErr := s.Create(ctx, CreatePlan{
-				EquipmentID: equipmentItem.ID, ProgramID: program.ID, Start: start, End: start.Add(2 * time.Hour),
+				EquipmentID: equipmentItem.ID, ProgramID: program.ID, Start: window.Start, End: window.End,
 				Assignee: assignee, IdempotencyKey: key, Actor: "local-scheduler", RequestID: key,
 			})
 			if createErr != nil {
 				return nil, createErr
 			}
 			if wasCreated {
+				calendar.Reserve(plan)
 				created = append(created, plan)
 			}
 		}
