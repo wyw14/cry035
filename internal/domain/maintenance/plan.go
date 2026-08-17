@@ -30,10 +30,10 @@ type ServiceAssociation struct {
 	ProgramID   string
 }
 
-func (p Plan) ServiceAssociation(requestedEquipmentID string) ServiceAssociation {
+func (p Plan) ServiceAssociation(_ string) ServiceAssociation {
 	return ServiceAssociation{
 		PlanID:      p.ID,
-		EquipmentID: requestedEquipmentID,
+		EquipmentID: p.EquipmentID,
 		ProgramID:   p.ProgramID,
 	}
 }

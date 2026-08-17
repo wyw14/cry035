@@ -25,58 +25,53 @@ var (
 	ErrPlanEquipmentMismatch = errors.New("supplier service plan belongs to another equipment")
 )
 
-type normalizedLedgerEntry struct {
-	vendor      string
-	equipmentID string
-	planID      string
-	currency    string
-	amount      int64
+type serviceRecordRule func(ServiceRecord, *maintenance.Plan) error
+
+var ledgerRules = []serviceRecordRule{
+	requireLedgerIdentity,
+	requireSupportedMoney,
+	requirePlanInEquipmentScope,
 }
 
-func normalizeLedgerEntry(item ServiceRecord) normalizedLedgerEntry {
-	return normalizedLedgerEntry{
-		vendor:      strings.TrimSpace(item.VendorName),
-		equipmentID: strings.TrimSpace(item.EquipmentID),
-		planID:      strings.TrimSpace(item.PlanID),
-		currency:    strings.ToUpper(strings.TrimSpace(item.Currency)),
-		amount:      item.AmountCents,
+func requireLedgerIdentity(item ServiceRecord, _ *maintenance.Plan) error {
+	if strings.TrimSpace(item.VendorName) == "" {
+		return fmt.Errorf("%w: vendor is required", ErrInvalidLedgerEntry)
 	}
-}
-
-func validateLedgerIdentity(item normalizedLedgerEntry) error {
-	if item.vendor == "" || item.equipmentID == "" {
-		return fmt.Errorf("%w: vendor and equipment are required", ErrInvalidLedgerEntry)
+	if strings.TrimSpace(item.EquipmentID) == "" {
+		return fmt.Errorf("%w: equipment is required", ErrInvalidLedgerEntry)
 	}
 	return nil
 }
 
-func validateLedgerMoney(item normalizedLedgerEntry) error {
-	if item.amount < 0 {
+func requireSupportedMoney(item ServiceRecord, _ *maintenance.Plan) error {
+	if item.AmountCents < 0 {
 		return fmt.Errorf("%w: amount cannot be negative", ErrInvalidLedgerEntry)
 	}
-	if item.currency != "CNY" && item.currency != "USD" {
+	currency := strings.ToUpper(strings.TrimSpace(item.Currency))
+	if currency != "CNY" && currency != "USD" {
 		return fmt.Errorf("%w: unsupported currency", ErrInvalidLedgerEntry)
 	}
 	return nil
 }
 
-func validateReferencedPlan(item normalizedLedgerEntry, linkedPlan *maintenance.Plan) error {
-	if item.planID == "" {
+func requirePlanInEquipmentScope(item ServiceRecord, linkedPlan *maintenance.Plan) error {
+	if strings.TrimSpace(item.PlanID) == "" {
 		return nil
 	}
-	if linkedPlan == nil || linkedPlan.ID != item.planID {
+	if linkedPlan == nil || linkedPlan.ID != item.PlanID {
 		return fmt.Errorf("%w: referenced plan does not exist", ErrInvalidLedgerEntry)
+	}
+	if !linkedPlan.AcceptsService(item.EquipmentID) {
+		return fmt.Errorf("%w: plan %s", ErrPlanEquipmentMismatch, item.PlanID)
 	}
 	return nil
 }
 
 func ValidateServiceRecord(item ServiceRecord, linkedPlan *maintenance.Plan) error {
-	normalized := normalizeLedgerEntry(item)
-	if err := validateLedgerIdentity(normalized); err != nil {
-		return err
+	for _, rule := range ledgerRules {
+		if err := rule(item, linkedPlan); err != nil {
+			return err
+		}
 	}
-	if err := validateLedgerMoney(normalized); err != nil {
-		return err
-	}
-	return validateReferencedPlan(normalized, linkedPlan)
+	return nil
 }
