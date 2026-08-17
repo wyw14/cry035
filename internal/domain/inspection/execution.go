@@ -3,6 +3,7 @@ package inspection
 import (
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -57,53 +58,62 @@ var (
 	ErrInvalidEvidence      = errors.New("invalid execution evidence")
 )
 
-type submissionIndex struct {
-	evidenceByID map[string]Evidence
-	measured     map[string]Measurement
-}
+var sha256Pattern = regexp.MustCompile(`^[a-fA-F0-9]{64}$`)
 
-func newSubmissionIndex(measurements []Measurement, evidence []Evidence) submissionIndex {
-	index := submissionIndex{
-		evidenceByID: make(map[string]Evidence, len(evidence)),
-		measured:     make(map[string]Measurement, len(measurements)),
+func validateEvidenceAsset(item Evidence) error {
+	if strings.TrimSpace(item.ID) == "" || strings.TrimSpace(item.FileName) == "" {
+		return ErrInvalidEvidence
 	}
-	for _, item := range evidence {
-		id := strings.TrimSpace(item.ID)
-		if id == "" {
-			continue
-		}
-		item.ID = id
-		index.evidenceByID[id] = item
+	if item.ContentType != "image/jpeg" && item.ContentType != "image/png" {
+		return fmt.Errorf("%w: unsupported content type", ErrInvalidEvidence)
 	}
-	for _, measurement := range measurements {
-		itemID := strings.TrimSpace(measurement.ItemID)
-		if itemID == "" {
-			continue
-		}
-		measurement.ItemID = itemID
-		index.measured[itemID] = measurement
+	if item.Size <= 0 || !sha256Pattern.MatchString(item.SHA256) {
+		return fmt.Errorf("%w: incomplete file metadata", ErrInvalidEvidence)
 	}
-	return index
+	return nil
 }
 
 func ValidateSubmission(checklist []maintenance.ChecklistItem, measurements []Measurement, evidence []Evidence) error {
-	index := newSubmissionIndex(measurements, evidence)
-	for _, measurement := range measurements {
-		if measurement.EvidenceID == "" {
-			continue
+	evidenceByID := make(map[string]Evidence, len(evidence))
+	for _, item := range evidence {
+		if err := validateEvidenceAsset(item); err != nil {
+			return fmt.Errorf("evidence %q: %w", item.ID, err)
 		}
-		if _, ok := index.evidenceByID[measurement.EvidenceID]; !ok {
-			return fmt.Errorf("%w: %s", ErrInvalidEvidence, measurement.EvidenceID)
+		if _, duplicate := evidenceByID[item.ID]; duplicate {
+			return fmt.Errorf("%w: %s", ErrDuplicateEvidence, item.ID)
 		}
+		evidenceByID[item.ID] = item
 	}
+
+	measurementsByItem := make(map[string]Measurement, len(measurements))
+	for _, measurement := range measurements {
+		if strings.TrimSpace(measurement.ItemID) == "" {
+			return fmt.Errorf("%w: empty item id", ErrDuplicateMeasurement)
+		}
+		if _, duplicate := measurementsByItem[measurement.ItemID]; duplicate {
+			return fmt.Errorf("%w: %s", ErrDuplicateMeasurement, measurement.ItemID)
+		}
+		if measurement.EvidenceID != "" {
+			if _, exists := evidenceByID[measurement.EvidenceID]; !exists {
+				return fmt.Errorf("%w: unknown evidence %s", ErrInvalidEvidence, measurement.EvidenceID)
+			}
+		}
+		measurementsByItem[measurement.ItemID] = measurement
+	}
+
+	usedByItem := make(map[string]string)
 	for _, item := range checklist {
-		measurement, exists := index.measured[item.ID]
+		measurement, exists := measurementsByItem[item.ID]
 		if !exists || !item.EvidenceReq {
 			continue
 		}
 		if measurement.EvidenceID == "" {
 			return fmt.Errorf("%w: %s", ErrEvidenceRequired, item.ID)
 		}
+		if previousItem, used := usedByItem[measurement.EvidenceID]; used {
+			return fmt.Errorf("%w: %s used by %s and %s", ErrEvidenceReused, measurement.EvidenceID, previousItem, item.ID)
+		}
+		usedByItem[measurement.EvidenceID] = item.ID
 	}
 	return nil
 }
