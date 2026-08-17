@@ -1,0 +1,16 @@
+.env
+.idea/
+.vscode/
+.codex/
+.claude/
+.gocache/
+.gomodcache/
+bin/
+coverage.out
+*.test
+var/
+web/node_modules/
+web/dist/
+web/*.tsbuildinfo
+*.log
+

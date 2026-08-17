@@ -1,0 +1,60 @@
+services:
+  db:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: vertical_maintenance
+      POSTGRES_USER: vertical
+      POSTGRES_PASSWORD: vertical
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vertical -d vertical_maintenance"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+
+  migrate:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    entrypoint: ["migrate"]
+    environment:
+      DATABASE_URL: postgres://vertical:vertical@db:5432/vertical_maintenance?sslmode=disable
+    depends_on:
+      db:
+        condition: service_healthy
+
+  api:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.api
+    environment:
+      APP_ENV: production
+      HTTP_ADDRESS: :8080
+      DATABASE_URL: postgres://vertical:vertical@db:5432/vertical_maintenance?sslmode=disable
+      ATTACHMENT_DIR: /app/var/attachments
+      CORS_ORIGIN: http://localhost:8088
+    volumes:
+      - attachments:/app/var/attachments
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD", "/usr/local/bin/server", "--healthcheck"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  web:
+    build:
+      context: .
+      dockerfile: deploy/Dockerfile.web
+    ports:
+      - "8088:80"
+    depends_on:
+      api:
+        condition: service_started
+
+volumes:
+  postgres_data:
+  attachments:

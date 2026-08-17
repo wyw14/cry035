@@ -1,0 +1,171 @@
+openapi: 3.0.3
+info:
+  title: 楼宇垂直运输设备保养计划平台 API
+  version: 1.0.0
+  description: 离线物业设备保养、复核、整改与恢复运行接口。
+servers:
+  - url: /api/v1
+tags:
+  - name: catalog
+  - name: planning
+  - name: execution
+  - name: remediation
+  - name: reporting
+paths:
+  /buildings:
+    get:
+      tags: [catalog]
+      summary: 楼宇列表
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {$ref: '#/components/responses/PageResponse'}}
+  /equipment:
+    get:
+      tags: [catalog]
+      summary: 设备台账
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {$ref: '#/components/responses/PageResponse'}}
+    post:
+      tags: [catalog]
+      summary: 创建设备
+      security: [{role: [safety_manager, planner]}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/EquipmentInput'}}}}
+      responses: {'201': {$ref: '#/components/responses/ItemResponse'}, '409': {$ref: '#/components/responses/Error'}}
+  /equipment/{equipmentId}:
+    get:
+      tags: [catalog]
+      summary: 设备详情
+      parameters: [{$ref: '#/components/parameters/EquipmentId'}]
+      responses: {'200': {$ref: '#/components/responses/ItemResponse'}, '404': {$ref: '#/components/responses/Error'}}
+  /programs:
+    get:
+      tags: [catalog]
+      summary: 保养项目库
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {$ref: '#/components/responses/PageResponse'}}
+  /plans:
+    get:
+      tags: [planning]
+      summary: 计划列表
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {$ref: '#/components/responses/PageResponse'}}
+    post:
+      tags: [planning]
+      summary: 创建停用窗口计划
+      security: [{role: [safety_manager, planner]}]
+      parameters: [{$ref: '#/components/parameters/IdempotencyKey'}]
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/PlanInput'}}}}
+      responses: {'201': {$ref: '#/components/responses/ItemResponse'}, '409': {$ref: '#/components/responses/Error'}}
+  /plans/generate:
+    post:
+      tags: [planning]
+      summary: 按法定周期生成到期计划
+      security: [{role: [safety_manager, planner]}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [horizon], properties: {horizon: {type: string, format: date-time}}}}}}
+      responses: {'200': {$ref: '#/components/responses/PageResponse'}}
+  /plans/{planId}/start:
+    post:
+      tags: [planning]
+      summary: 开始执行
+      parameters: [{$ref: '#/components/parameters/PlanId'}]
+      requestBody: {$ref: '#/components/requestBodies/VersionBody'}
+      responses: {'200': {$ref: '#/components/responses/ItemResponse'}, '409': {$ref: '#/components/responses/Error'}}
+  /plans/{planId}/execution:
+    get:
+      tags: [execution]
+      summary: 执行记录详情
+      parameters: [{$ref: '#/components/parameters/PlanId'}]
+      responses: {'200': {$ref: '#/components/responses/ItemResponse'}}
+    post:
+      tags: [execution]
+      summary: 提交实测与证据
+      requestBody: {required: true, content: {application/json: {schema: {$ref: '#/components/schemas/ExecutionInput'}}}}
+      responses: {'201': {$ref: '#/components/responses/ItemResponse'}, '400': {$ref: '#/components/responses/Error'}}
+  /plans/{planId}/review:
+    post:
+      tags: [execution]
+      summary: 复核执行记录
+      parameters: [{$ref: '#/components/parameters/PlanId'}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expected_version, outcome, comment], properties: {expected_version: {type: integer}, outcome: {type: string, enum: [passed, failed]}, comment: {type: string}}}}}}
+      responses: {'200': {$ref: '#/components/responses/ItemResponse'}, '409': {$ref: '#/components/responses/Error'}}
+  /defects:
+    get:
+      tags: [remediation]
+      summary: 缺陷列表
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}, {name: equipment_id, in: query, schema: {type: string}}]
+      responses: {'200': {$ref: '#/components/responses/PageResponse'}}
+  /defects/{defectId}/rectify:
+    post:
+      tags: [remediation]
+      summary: 登记整改
+      parameters: [{$ref: '#/components/parameters/DefectId'}]
+      requestBody: {required: true, content: {application/json: {schema: {type: object, required: [expected_version, action], properties: {expected_version: {type: integer}, action: {type: string}, evidence_id: {type: string}}}}}}
+      responses: {'200': {$ref: '#/components/responses/ItemResponse'}, '409': {$ref: '#/components/responses/Error'}}
+  /plans/{planId}/reinspection:
+    post:
+      tags: [remediation]
+      summary: 提交关联复检
+      parameters: [{$ref: '#/components/parameters/PlanId'}]
+      responses: {'201': {$ref: '#/components/responses/ItemResponse'}, '409': {$ref: '#/components/responses/Error'}}
+  /plans/{planId}/restore:
+    post:
+      tags: [remediation]
+      summary: 恢复运行
+      parameters: [{$ref: '#/components/parameters/PlanId'}]
+      requestBody: {$ref: '#/components/requestBodies/VersionBody'}
+      responses: {'200': {$ref: '#/components/responses/ItemResponse'}, '409': {$ref: '#/components/responses/Error'}}
+  /equipment/{equipmentId}/history:
+    get:
+      tags: [reporting]
+      summary: 设备历史与审计时间线
+      parameters: [{$ref: '#/components/parameters/EquipmentId'}]
+      responses: {'200': {$ref: '#/components/responses/ItemResponse'}}
+  /equipment/{equipmentId}/export.csv:
+    get:
+      tags: [reporting]
+      summary: 导出设备 CSV
+      parameters: [{$ref: '#/components/parameters/EquipmentId'}]
+      responses: {'200': {description: CSV, content: {text/csv: {schema: {type: string}}}}}
+  /alerts:
+    get:
+      tags: [reporting]
+      summary: 安全告警
+      parameters: [{$ref: '#/components/parameters/Page'}, {$ref: '#/components/parameters/PageSize'}]
+      responses: {'200': {$ref: '#/components/responses/PageResponse'}}
+components:
+  securitySchemes:
+    role:
+      type: apiKey
+      in: header
+      name: X-Role
+  parameters:
+    Page: {name: page, in: query, schema: {type: integer, minimum: 1, default: 1}}
+    PageSize: {name: page_size, in: query, schema: {type: integer, minimum: 1, maximum: 100, default: 20}}
+    IdempotencyKey: {name: Idempotency-Key, in: header, schema: {type: string, maxLength: 128}}
+    EquipmentId: {name: equipmentId, in: path, required: true, schema: {type: string}}
+    PlanId: {name: planId, in: path, required: true, schema: {type: string}}
+    DefectId: {name: defectId, in: path, required: true, schema: {type: string}}
+  requestBodies:
+    VersionBody:
+      required: true
+      content: {application/json: {schema: {type: object, required: [expected_version], properties: {expected_version: {type: integer, minimum: 1}}}}}
+  schemas:
+    EquipmentInput:
+      type: object
+      required: [code, name, building_id, model_id, location, responsible_unit]
+      properties: {code: {type: string}, name: {type: string}, building_id: {type: string}, model_id: {type: string}, location: {type: string}, responsible_unit: {type: string}}
+    PlanInput:
+      type: object
+      required: [equipment_id, program_id, start, end, assignee]
+      properties: {equipment_id: {type: string}, program_id: {type: string}, start: {type: string, format: date-time}, end: {type: string, format: date-time}, assignee: {type: string}}
+    ExecutionInput:
+      type: object
+      required: [expected_version, measurements]
+      properties: {expected_version: {type: integer}, measurements: {type: array, items: {type: object}}, evidence: {type: array, items: {type: object}}}
+    ErrorResponse:
+      type: object
+      required: [code, message, request_id]
+      properties: {code: {type: string}, message: {type: string}, field_errors: {type: array}, request_id: {type: string}}
+  responses:
+    Error: {description: 稳定错误响应, content: {application/json: {schema: {$ref: '#/components/schemas/ErrorResponse'}}}}
+    ItemResponse: {description: 资源响应, content: {application/json: {schema: {type: object, properties: {item: {type: object}, request_id: {type: string}}}}}}
+    PageResponse: {description: 分页响应, content: {application/json: {schema: {type: object, properties: {items: {type: array, items: {type: object}}, page: {type: integer}, page_size: {type: integer}, total: {type: integer}, request_id: {type: string}}}}}}
