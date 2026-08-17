@@ -44,6 +44,57 @@ type Equipment struct {
 	UpdatedAt       time.Time       `json:"updated_at"`
 }
 
+type MaintenanceExposure struct {
+	Overdue      bool
+	AlertLevel   string
+	AlertMessage string
+}
+
+var idleOverdueStatuses = map[string]struct {
+	level   string
+	message string
+}{
+	"planned": {
+		level:   "warning",
+		message: "保养计划未在停用窗口内开始",
+	},
+	"suspended": {
+		level:   "warning",
+		message: "暂停的保养计划已经超过停用窗口",
+	},
+}
+
+func AssessMaintenanceExposure(planStatus string, windowEnd, now time.Time) MaintenanceExposure {
+	status := normalizeMaintenanceStatus(planStatus)
+	if status == "" || !windowHasStrictlyExpired(windowEnd, now) {
+		return MaintenanceExposure{}
+	}
+	rule, eligible := idleOverdueStatuses[status]
+	if !eligible {
+		return MaintenanceExposure{}
+	}
+	return idleMaintenanceExposure(rule.level, rule.message)
+}
+
+func normalizeMaintenanceStatus(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
+}
+
+func windowHasStrictlyExpired(windowEnd, now time.Time) bool {
+	if windowEnd.IsZero() || now.IsZero() {
+		return false
+	}
+	return windowEnd.UTC().Before(now.UTC())
+}
+
+func idleMaintenanceExposure(level, message string) MaintenanceExposure {
+	return MaintenanceExposure{
+		Overdue:      true,
+		AlertLevel:   level,
+		AlertMessage: message,
+	}
+}
+
 func (e Equipment) Validate() error {
 	if strings.TrimSpace(e.ID) == "" || strings.TrimSpace(e.Code) == "" || strings.TrimSpace(e.Name) == "" {
 		return ErrInvalidEquipment

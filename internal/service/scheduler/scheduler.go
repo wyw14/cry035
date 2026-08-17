@@ -6,6 +6,7 @@ import (
 
 	"github.com/wyw14/cry035/internal/application/planning"
 	"github.com/wyw14/cry035/internal/domain/audit"
+	"github.com/wyw14/cry035/internal/domain/equipment"
 	"github.com/wyw14/cry035/internal/domain/maintenance"
 )
 
@@ -40,12 +41,13 @@ func (s *Service) RunOnce(ctx context.Context, horizon time.Time) ([]maintenance
 	}
 	now := s.clock.Now().UTC()
 	for _, plan := range plans {
-		if (plan.Status == maintenance.StatusPlanned || plan.Status == maintenance.StatusSuspended) && plan.Window.End.Before(now) {
+		exposure := equipment.AssessMaintenanceExposure(string(plan.Status), plan.Window.End, now)
+		if exposure.Overdue {
 			updated, transitionErr := s.repo.TransitionPlan(ctx, plan.ID, plan.Version, maintenance.StatusOverdue, now)
 			if transitionErr != nil {
 				return nil, transitionErr
 			}
-			_ = s.repo.SaveAlert(ctx, audit.Alert{ID: s.ids.New(), EquipmentID: updated.EquipmentID, PlanID: updated.ID, Level: "warning", Message: "保养计划已逾期", CreatedAt: now})
+			_ = s.repo.SaveAlert(ctx, audit.Alert{ID: s.ids.New(), EquipmentID: updated.EquipmentID, PlanID: updated.ID, Level: exposure.AlertLevel, Message: exposure.AlertMessage, CreatedAt: now})
 		}
 	}
 	return created, nil
