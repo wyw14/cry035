@@ -9,54 +9,67 @@ import (
 
 const generatedWindowDuration = 2 * time.Hour
 
-// generationCalendar is a point-in-time view of occupied shutdown windows.
+// generationCalendar tracks both stored plans and plans reserved in this batch.
 type generationCalendar struct {
-	occupied []maintenance.Plan
+	byEquipment map[string][]maintenance.Window
 }
 
 func newGenerationCalendar(plans []maintenance.Plan) *generationCalendar {
-	occupied := make([]maintenance.Plan, 0, len(plans))
+	calendar := &generationCalendar{byEquipment: make(map[string][]maintenance.Window)}
 	for _, plan := range plans {
 		if !maintenance.BlocksScheduling(plan.Status) {
 			continue
 		}
-		occupied = append(occupied, plan)
+		calendar.byEquipment[plan.EquipmentID] = append(
+			calendar.byEquipment[plan.EquipmentID],
+			plan.Window,
+		)
 	}
-	sort.SliceStable(occupied, func(i, j int) bool {
-		if occupied[i].EquipmentID == occupied[j].EquipmentID {
-			return occupied[i].Window.Start.Before(occupied[j].Window.Start)
-		}
-		return occupied[i].EquipmentID < occupied[j].EquipmentID
-	})
-	return &generationCalendar{occupied: occupied}
+	for equipmentID := range calendar.byEquipment {
+		calendar.sort(equipmentID)
+	}
+	return calendar
 }
 
 func (c *generationCalendar) Next(equipmentID string, due time.Time) maintenance.Window {
 	start := time.Date(due.Year(), due.Month(), due.Day(), 1, 0, 0, 0, time.UTC)
-	candidate := maintenance.Window{Start: start, End: start.Add(generatedWindowDuration)}
-
-	for _, plan := range c.occupied {
-		if plan.EquipmentID != equipmentID {
-			continue
+	for {
+		candidate := maintenance.Window{Start: start, End: start.Add(generatedWindowDuration)}
+		conflictEnd, conflict := c.firstConflictEnd(equipmentID, candidate)
+		if !conflict {
+			return candidate
 		}
-		if !plan.Window.Overlaps(candidate) {
-			continue
-		}
-		candidate.Start = plan.Window.End.UTC()
-		candidate.End = candidate.Start.Add(generatedWindowDuration)
+		start = conflictEnd
 	}
-	return candidate
+}
+
+func (c *generationCalendar) firstConflictEnd(equipmentID string, candidate maintenance.Window) (time.Time, bool) {
+	for _, occupied := range c.byEquipment[equipmentID] {
+		if occupied.Start.After(candidate.End) || occupied.Start.Equal(candidate.End) {
+			break
+		}
+		if occupied.Overlaps(candidate) {
+			return occupied.End.UTC(), true
+		}
+	}
+	return time.Time{}, false
 }
 
 func (c *generationCalendar) Reserve(plan maintenance.Plan) {
-	// Keep a sorted snapshot for callers that inspect this reservation.
-	// The refreshed slice is intentionally local to avoid exposing mutations.
-	snapshot := append([]maintenance.Plan(nil), c.occupied...)
-	snapshot = append(snapshot, plan)
-	sort.SliceStable(snapshot, func(i, j int) bool {
-		if snapshot[i].EquipmentID == snapshot[j].EquipmentID {
-			return snapshot[i].Window.Start.Before(snapshot[j].Window.Start)
+	if !maintenance.BlocksScheduling(plan.Status) {
+		return
+	}
+	c.byEquipment[plan.EquipmentID] = append(c.byEquipment[plan.EquipmentID], plan.Window)
+	c.sort(plan.EquipmentID)
+}
+
+func (c *generationCalendar) sort(equipmentID string) {
+	windows := c.byEquipment[equipmentID]
+	sort.SliceStable(windows, func(i, j int) bool {
+		if windows[i].Start.Equal(windows[j].Start) {
+			return windows[i].End.Before(windows[j].End)
 		}
-		return snapshot[i].EquipmentID < snapshot[j].EquipmentID
+		return windows[i].Start.Before(windows[j].Start)
 	})
+	c.byEquipment[equipmentID] = windows
 }
