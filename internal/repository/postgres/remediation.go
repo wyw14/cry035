@@ -186,14 +186,28 @@ func (s *Store) RestoreEquipment(ctx context.Context, planID string, expectedVer
 		if err != nil || !reviewedPassed {
 			return maintenance.Plan{}, baserepo.ErrConflict
 		}
-		var closedBlocking int
-		err = tx.QueryRow(ctx, `
-			SELECT count(*) FROM defects
+		rows, queryErr := tx.Query(ctx, `
+			SELECT `+defectColumns+` FROM defects
 			WHERE equipment_id=$1 AND restriction_key=$2
-			  AND level IN ('critical','major') AND status='closed'`,
-			plan.EquipmentID, plan.RestrictionKey,
-		).Scan(&closedBlocking)
-		if err != nil || closedBlocking == 0 {
+			ORDER BY id FOR UPDATE`, plan.EquipmentID, plan.RestrictionKey)
+		if queryErr != nil {
+			return maintenance.Plan{}, translate(queryErr)
+		}
+		defects := make([]defect.Defect, 0)
+		for rows.Next() {
+			item, scanErr := scanDefect(rows)
+			if scanErr != nil {
+				rows.Close()
+				return maintenance.Plan{}, scanErr
+			}
+			defects = append(defects, item)
+		}
+		rowsErr := rows.Err()
+		rows.Close()
+		if rowsErr != nil {
+			return maintenance.Plan{}, rowsErr
+		}
+		if assessment := defect.AssessRestoration(plan.RestrictionKey, defects); !assessment.Allowed {
 			return maintenance.Plan{}, baserepo.ErrConflict
 		}
 	}

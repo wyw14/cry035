@@ -63,24 +63,56 @@ type RestorationAssessment struct {
 }
 
 func AssessRestoration(restrictionKey string, defects []Defect) RestorationAssessment {
-	assessment := RestorationAssessment{RestrictionKey: restrictionKey}
+	blocking := blockingDefectsForRestriction(restrictionKey, defects)
+	closedIDs, openIDs := partitionBlockingDefects(blocking)
+	assessment := RestorationAssessment{
+		RestrictionKey:    restrictionKey,
+		ClosedBlockingIDs: closedIDs,
+		OpenBlockingIDs:   openIDs,
+	}
+	sort.Strings(assessment.ClosedBlockingIDs)
+	sort.Strings(assessment.OpenBlockingIDs)
+	assessment.Allowed = restrictionKey != "" && len(blocking) > 0 && len(assessment.OpenBlockingIDs) == 0
+	return assessment
+}
+
+func blockingDefectsForRestriction(restrictionKey string, defects []Defect) []Defect {
+	if restrictionKey == "" {
+		return nil
+	}
+	matching := make([]Defect, 0, len(defects))
 	for _, item := range defects {
 		if item.RestrictionKey != restrictionKey {
 			continue
 		}
-		if item.Level != "critical" && item.Level != "major" {
+		if !isRestorationBlockingLevel(item.Level) {
 			continue
 		}
-		if item.Status == StatusClosed {
-			assessment.ClosedBlockingIDs = append(assessment.ClosedBlockingIDs, item.ID)
-			continue
-		}
-		assessment.OpenBlockingIDs = append(assessment.OpenBlockingIDs, item.ID)
+		matching = append(matching, item)
 	}
-	sort.Strings(assessment.ClosedBlockingIDs)
-	sort.Strings(assessment.OpenBlockingIDs)
-	assessment.Allowed = restrictionKey != "" && len(assessment.ClosedBlockingIDs) > 0
-	return assessment
+	return matching
+}
+
+func partitionBlockingDefects(defects []Defect) ([]string, []string) {
+	closedIDs := make([]string, 0, len(defects))
+	openIDs := make([]string, 0, len(defects))
+	for _, item := range defects {
+		if item.Status == StatusClosed {
+			closedIDs = append(closedIDs, item.ID)
+			continue
+		}
+		openIDs = append(openIDs, item.ID)
+	}
+	return closedIDs, openIDs
+}
+
+func isRestorationBlockingLevel(level string) bool {
+	switch level {
+	case "critical", "major":
+		return true
+	default:
+		return false
+	}
 }
 
 func BlocksRestoration(defects []Defect) bool {
