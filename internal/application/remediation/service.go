@@ -8,6 +8,7 @@ import (
 	"github.com/wyw14/cry035/internal/domain/audit"
 	"github.com/wyw14/cry035/internal/domain/defect"
 	"github.com/wyw14/cry035/internal/domain/maintenance"
+	baserepo "github.com/wyw14/cry035/internal/repository"
 )
 
 type Repository interface {
@@ -99,5 +100,18 @@ func (s *Service) ReviewReinspection(ctx context.Context, id, reviewer, requestI
 }
 
 func (s *Service) Restore(ctx context.Context, planID string, expectedVersion int64, actor, requestID string) (maintenance.Plan, error) {
+	plan, err := s.repo.GetPlan(ctx, planID)
+	if err != nil {
+		return maintenance.Plan{}, err
+	}
+	if plan.EverRestricted {
+		defects, listErr := s.repo.ListDefects(ctx, plan.EquipmentID)
+		if listErr != nil {
+			return maintenance.Plan{}, listErr
+		}
+		if assessment := defect.AssessRestoration(plan.RestrictionKey, defects); !assessment.Allowed {
+			return maintenance.Plan{}, fmt.Errorf("%w: %w", baserepo.ErrConflict, defect.ErrRestorationBlocked)
+		}
+	}
 	return s.repo.RestoreEquipment(ctx, planID, expectedVersion, actor, requestID, s.clock.Now())
 }

@@ -186,9 +186,14 @@ func (s *Store) RestoreEquipment(ctx context.Context, planID string, expectedVer
 		if err != nil || !reviewedPassed {
 			return maintenance.Plan{}, baserepo.ErrConflict
 		}
-		var blocking bool
-		err = tx.QueryRow(ctx, `SELECT EXISTS(SELECT 1 FROM defects WHERE restriction_key=$1 AND level IN ('critical','major') AND status <> 'closed')`, plan.RestrictionKey).Scan(&blocking)
-		if err != nil || blocking {
+		var closedBlocking int
+		err = tx.QueryRow(ctx, `
+			SELECT count(*) FROM defects
+			WHERE equipment_id=$1 AND restriction_key=$2
+			  AND level IN ('critical','major') AND status='closed'`,
+			plan.EquipmentID, plan.RestrictionKey,
+		).Scan(&closedBlocking)
+		if err != nil || closedBlocking == 0 {
 			return maintenance.Plan{}, baserepo.ErrConflict
 		}
 	}

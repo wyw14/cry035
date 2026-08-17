@@ -1,6 +1,10 @@
 package defect
 
-import "time"
+import (
+	"errors"
+	"sort"
+	"time"
+)
 
 type Status string
 
@@ -47,6 +51,36 @@ type Reinspection struct {
 	Comment        string     `json:"comment"`
 	InspectedAt    time.Time  `json:"inspected_at"`
 	ReviewedAt     *time.Time `json:"reviewed_at,omitempty"`
+}
+
+var ErrRestorationBlocked = errors.New("equipment still has blocking defects")
+
+type RestorationAssessment struct {
+	Allowed           bool
+	RestrictionKey    string
+	ClosedBlockingIDs []string
+	OpenBlockingIDs   []string
+}
+
+func AssessRestoration(restrictionKey string, defects []Defect) RestorationAssessment {
+	assessment := RestorationAssessment{RestrictionKey: restrictionKey}
+	for _, item := range defects {
+		if item.RestrictionKey != restrictionKey {
+			continue
+		}
+		if item.Level != "critical" && item.Level != "major" {
+			continue
+		}
+		if item.Status == StatusClosed {
+			assessment.ClosedBlockingIDs = append(assessment.ClosedBlockingIDs, item.ID)
+			continue
+		}
+		assessment.OpenBlockingIDs = append(assessment.OpenBlockingIDs, item.ID)
+	}
+	sort.Strings(assessment.ClosedBlockingIDs)
+	sort.Strings(assessment.OpenBlockingIDs)
+	assessment.Allowed = restrictionKey != "" && len(assessment.ClosedBlockingIDs) > 0
+	return assessment
 }
 
 func BlocksRestoration(defects []Defect) bool {

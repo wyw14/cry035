@@ -492,10 +492,14 @@ func (s *MemoryStore) RestoreEquipment(ctx context.Context, planID string, expec
 		if !passed {
 			return maintenance.Plan{}, ErrConflict
 		}
+		defects := make([]defect.Defect, 0)
 		for _, item := range s.defects {
-			if item.RestrictionKey == plan.RestrictionKey && (item.Level == "critical" || item.Level == "major") && item.Status != defect.StatusClosed {
-				return maintenance.Plan{}, ErrConflict
+			if item.EquipmentID == plan.EquipmentID {
+				defects = append(defects, item)
 			}
+		}
+		if assessment := defect.AssessRestoration(plan.RestrictionKey, defects); !assessment.Allowed {
+			return maintenance.Plan{}, ErrConflict
 		}
 	}
 	plan.Status = maintenance.StatusRestored
