@@ -50,49 +50,62 @@ type MaintenanceExposure struct {
 	AlertMessage string
 }
 
-var idleOverdueStatuses = map[string]struct {
+type exposureRule struct {
+	status  string
 	level   string
 	message string
-}{
-	"planned": {
+}
+
+var maintenanceExposureRules = []exposureRule{
+	{
+		status:  "planned",
 		level:   "warning",
 		message: "保养计划未在停用窗口内开始",
 	},
-	"suspended": {
+	{
+		status:  "suspended",
 		level:   "warning",
 		message: "暂停的保养计划已经超过停用窗口",
+	},
+	{
+		status:  "in_progress",
+		level:   "critical",
+		message: "已开工保养超过停用窗口，设备继续停用并立即升级处置",
 	},
 }
 
 func AssessMaintenanceExposure(planStatus string, windowEnd, now time.Time) MaintenanceExposure {
-	status := normalizeMaintenanceStatus(planStatus)
-	if status == "" || !windowHasStrictlyExpired(windowEnd, now) {
+	if !maintenanceWindowReachedEnd(windowEnd, now) {
 		return MaintenanceExposure{}
 	}
-	rule, eligible := idleOverdueStatuses[status]
-	if !eligible {
+	status := strings.ToLower(strings.TrimSpace(planStatus))
+	rule, exists := findExposureRule(status)
+	if !exists {
 		return MaintenanceExposure{}
 	}
-	return idleMaintenanceExposure(rule.level, rule.message)
+	return MaintenanceExposure{
+		Overdue:      true,
+		AlertLevel:   rule.level,
+		AlertMessage: rule.message,
+	}
 }
 
-func normalizeMaintenanceStatus(value string) string {
-	return strings.ToLower(strings.TrimSpace(value))
-}
-
-func windowHasStrictlyExpired(windowEnd, now time.Time) bool {
+func maintenanceWindowReachedEnd(windowEnd, now time.Time) bool {
 	if windowEnd.IsZero() || now.IsZero() {
 		return false
 	}
-	return windowEnd.UTC().Before(now.UTC())
+	end := windowEnd.UTC()
+	current := now.UTC()
+	return !current.Before(end)
 }
 
-func idleMaintenanceExposure(level, message string) MaintenanceExposure {
-	return MaintenanceExposure{
-		Overdue:      true,
-		AlertLevel:   level,
-		AlertMessage: message,
+func findExposureRule(status string) (exposureRule, bool) {
+	for _, candidate := range maintenanceExposureRules {
+		if candidate.status == status {
+			return candidate, true
+		}
 	}
+	return exposureRule{}, false
 }
 
 func (e Equipment) Validate() error {
