@@ -524,6 +524,17 @@ func (s *MemoryStore) SaveServiceRecord(ctx context.Context, item supplier.Servi
 	if _, ok := s.equipment[item.EquipmentID]; !ok {
 		return ErrNotFound
 	}
+	var linkedPlan *maintenance.Plan
+	if item.PlanID != "" {
+		plan, ok := s.plans[item.PlanID]
+		if !ok {
+			return ErrNotFound
+		}
+		linkedPlan = &plan
+	}
+	if err := supplier.ValidateServiceRecord(item, linkedPlan); err != nil {
+		return err
+	}
 	s.services[item.ID] = item
 	return nil
 }

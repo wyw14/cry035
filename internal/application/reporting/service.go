@@ -18,6 +18,7 @@ import (
 
 type Repository interface {
 	GetEquipment(context.Context, string) (equipment.Equipment, error)
+	GetPlan(context.Context, string) (maintenance.Plan, error)
 	ListPlans(context.Context) ([]maintenance.Plan, error)
 	ListDefects(context.Context, string) ([]defect.Defect, error)
 	ListServiceRecords(context.Context, string) ([]supplier.ServiceRecord, error)
@@ -105,6 +106,17 @@ func (s *Service) RecordService(ctx context.Context, input RecordService) (suppl
 		ID: s.ids.New(), VendorName: input.VendorName, EquipmentID: input.EquipmentID,
 		PlanID: input.PlanID, Description: input.Description, AmountCents: input.AmountCents,
 		Currency: input.Currency, ServicedAt: input.ServicedAt.UTC(),
+	}
+	var linkedPlan *maintenance.Plan
+	if item.PlanID != "" {
+		plan, err := s.repo.GetPlan(ctx, item.PlanID)
+		if err != nil {
+			return supplier.ServiceRecord{}, err
+		}
+		linkedPlan = &plan
+	}
+	if err := supplier.ValidateServiceRecord(item, linkedPlan); err != nil {
+		return supplier.ServiceRecord{}, err
 	}
 	if err := s.repo.SaveServiceRecord(ctx, item); err != nil {
 		return supplier.ServiceRecord{}, err

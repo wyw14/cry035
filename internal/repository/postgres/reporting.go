@@ -4,16 +4,38 @@ import (
 	"context"
 	"encoding/json"
 
+	"github.com/jackc/pgx/v5"
+
 	"github.com/wyw14/cry035/internal/domain/audit"
+	"github.com/wyw14/cry035/internal/domain/maintenance"
 	"github.com/wyw14/cry035/internal/domain/supplier"
 )
 
 func (s *Store) SaveServiceRecord(ctx context.Context, item supplier.ServiceRecord) error {
-	_, err := s.pool.Exec(ctx, `
+	tx, err := s.pool.BeginTx(ctx, pgx.TxOptions{})
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback(ctx) }()
+	var linkedPlan *maintenance.Plan
+	if item.PlanID != "" {
+		plan, queryErr := scanPlan(tx.QueryRow(ctx, `SELECT `+planColumns+` FROM maintenance_plans WHERE id=$1 FOR SHARE`, item.PlanID))
+		if queryErr != nil {
+			return translate(queryErr)
+		}
+		linkedPlan = &plan
+	}
+	if err := supplier.ValidateServiceRecord(item, linkedPlan); err != nil {
+		return err
+	}
+	_, err = tx.Exec(ctx, `
 		INSERT INTO vendor_services(id,vendor_name,equipment_id,plan_id,description,amount_cents,currency,serviced_at)
 		VALUES($1,$2,$3,NULLIF($4,''),$5,$6,$7,$8)`, item.ID, item.VendorName, item.EquipmentID,
 		item.PlanID, item.Description, item.AmountCents, item.Currency, item.ServicedAt)
-	return translate(err)
+	if err != nil {
+		return translate(err)
+	}
+	return translate(tx.Commit(ctx))
 }
 
 func (s *Store) ListServiceRecords(ctx context.Context, equipmentID string) ([]supplier.ServiceRecord, error) {

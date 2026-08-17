@@ -23,3 +23,22 @@ type Plan struct {
 	CreatedAt      time.Time          `json:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at"`
 }
+
+type ServiceAssociation struct {
+	PlanID      string
+	EquipmentID string
+	ProgramID   string
+}
+
+func (p Plan) ServiceAssociation(requestedEquipmentID string) ServiceAssociation {
+	return ServiceAssociation{
+		PlanID:      p.ID,
+		EquipmentID: requestedEquipmentID,
+		ProgramID:   p.ProgramID,
+	}
+}
+
+func (p Plan) AcceptsService(equipmentID string) bool {
+	association := p.ServiceAssociation(equipmentID)
+	return association.PlanID != "" && association.EquipmentID == equipmentID
+}
