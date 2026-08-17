@@ -3,6 +3,7 @@ package inspection
 import (
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/wyw14/cry035/internal/domain/maintenance"
@@ -48,9 +49,64 @@ const (
 )
 
 var (
-	ErrIncompleteChecklist = errors.New("required checklist item is missing")
-	ErrEvidenceRequired    = errors.New("required photo evidence is missing")
+	ErrIncompleteChecklist  = errors.New("required checklist item is missing")
+	ErrEvidenceRequired     = errors.New("required photo evidence is missing")
+	ErrDuplicateEvidence    = errors.New("duplicate execution evidence id")
+	ErrDuplicateMeasurement = errors.New("duplicate checklist measurement")
+	ErrEvidenceReused       = errors.New("photo evidence is assigned to multiple checklist items")
+	ErrInvalidEvidence      = errors.New("invalid execution evidence")
 )
+
+type submissionIndex struct {
+	evidenceByID map[string]Evidence
+	measured     map[string]Measurement
+}
+
+func newSubmissionIndex(measurements []Measurement, evidence []Evidence) submissionIndex {
+	index := submissionIndex{
+		evidenceByID: make(map[string]Evidence, len(evidence)),
+		measured:     make(map[string]Measurement, len(measurements)),
+	}
+	for _, item := range evidence {
+		id := strings.TrimSpace(item.ID)
+		if id == "" {
+			continue
+		}
+		item.ID = id
+		index.evidenceByID[id] = item
+	}
+	for _, measurement := range measurements {
+		itemID := strings.TrimSpace(measurement.ItemID)
+		if itemID == "" {
+			continue
+		}
+		measurement.ItemID = itemID
+		index.measured[itemID] = measurement
+	}
+	return index
+}
+
+func ValidateSubmission(checklist []maintenance.ChecklistItem, measurements []Measurement, evidence []Evidence) error {
+	index := newSubmissionIndex(measurements, evidence)
+	for _, measurement := range measurements {
+		if measurement.EvidenceID == "" {
+			continue
+		}
+		if _, ok := index.evidenceByID[measurement.EvidenceID]; !ok {
+			return fmt.Errorf("%w: %s", ErrInvalidEvidence, measurement.EvidenceID)
+		}
+	}
+	for _, item := range checklist {
+		measurement, exists := index.measured[item.ID]
+		if !exists || !item.EvidenceReq {
+			continue
+		}
+		if measurement.EvidenceID == "" {
+			return fmt.Errorf("%w: %s", ErrEvidenceRequired, item.ID)
+		}
+	}
+	return nil
+}
 
 type Finding struct {
 	ItemID string `json:"item_id"`

@@ -56,16 +56,8 @@ func (s *Service) Submit(ctx context.Context, input Submit) (inspection.Executio
 	if err != nil {
 		return inspection.Execution{}, nil, err
 	}
-	evidenceSet := make(map[string]struct{}, len(input.Evidence))
-	for _, item := range input.Evidence {
-		evidenceSet[item.ID] = struct{}{}
-	}
-	for _, measurement := range input.Measurements {
-		if measurement.EvidenceID != "" {
-			if _, ok := evidenceSet[measurement.EvidenceID]; !ok {
-				return inspection.Execution{}, nil, fmt.Errorf("%w: %s", ErrUnknownEvidence, measurement.EvidenceID)
-			}
-		}
+	if err := inspection.ValidateSubmission(program.Checklist, input.Measurements, input.Evidence); err != nil {
+		return inspection.Execution{}, nil, err
 	}
 	findings, err := inspection.Evaluate(program.Checklist, input.Measurements)
 	if err != nil {
