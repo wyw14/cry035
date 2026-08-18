@@ -75,11 +75,41 @@ func (s *Service) History(ctx context.Context, equipmentID string) (History, err
 	if err != nil {
 		return History{}, err
 	}
+	events = cloneHistoryEvents(events)
 	var costTotal int64
 	for _, item := range services {
 		costTotal += item.AmountCents
 	}
 	return History{Equipment: equipmentItem, Plans: plans, Defects: defects, Services: services, Events: events, CostTotal: costTotal}, nil
+}
+
+func cloneHistoryEvents(events []audit.Event) []audit.Event {
+	cloned := make([]audit.Event, 0, len(events))
+	for _, event := range events {
+		copyEvent := event
+		copyEvent.Details = cloneHistoryDetails(event.Details)
+		cloned = append(cloned, copyEvent)
+	}
+	return cloned
+}
+
+func cloneHistoryDetails(details map[string]any) map[string]any {
+	cloned := make(map[string]any, len(details))
+	for key, value := range details {
+		switch nested := value.(type) {
+		case []string:
+			cloned[key] = append([]string(nil), nested...)
+		case map[string]string:
+			copyMap := make(map[string]string, len(nested))
+			for nestedKey, nestedValue := range nested {
+				copyMap[nestedKey] = nestedValue
+			}
+			cloned[key] = copyMap
+		default:
+			cloned[key] = value
+		}
+	}
+	return cloned
 }
 
 type RecordService struct {

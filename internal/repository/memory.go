@@ -550,6 +550,7 @@ func (s *MemoryStore) AppendEvent(ctx context.Context, event audit.Event) error 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	event.Details = cloneEventDetails(event.Details)
 	s.events = append(s.events, event)
 	return nil
 }
@@ -564,15 +565,31 @@ func (s *MemoryStore) ListEvents(ctx context.Context, entityID string) ([]audit.
 	for _, item := range s.events {
 		if entityID == "" || item.EntityID == entityID {
 			copyItem := item
-			copyItem.Details = make(map[string]any, len(item.Details))
-			for key, value := range item.Details {
-				copyItem.Details[key] = value
-			}
+			copyItem.Details = cloneEventDetails(item.Details)
 			items = append(items, copyItem)
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].OccurredAt.Before(items[j].OccurredAt) })
 	return items, nil
+}
+
+func cloneEventDetails(details map[string]any) map[string]any {
+	copyDetails := make(map[string]any, len(details))
+	for key, value := range details {
+		switch typed := value.(type) {
+		case []string:
+			copyDetails[key] = append([]string(nil), typed...)
+		case map[string]string:
+			nested := make(map[string]string, len(typed))
+			for nestedKey, nestedValue := range typed {
+				nested[nestedKey] = nestedValue
+			}
+			copyDetails[key] = nested
+		default:
+			copyDetails[key] = value
+		}
+	}
+	return copyDetails
 }
 
 func (s *MemoryStore) SaveAlert(ctx context.Context, item audit.Alert) error {
