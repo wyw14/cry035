@@ -88,6 +88,7 @@ func newSubmissionIndex(measurements []Measurement, evidence []Evidence) submiss
 
 func ValidateSubmission(checklist []maintenance.ChecklistItem, measurements []Measurement, evidence []Evidence) error {
 	index := newSubmissionIndex(measurements, evidence)
+	seenEvidence := make(map[string]string, len(measurements))
 	for _, measurement := range measurements {
 		if measurement.EvidenceID == "" {
 			continue
@@ -95,6 +96,10 @@ func ValidateSubmission(checklist []maintenance.ChecklistItem, measurements []Me
 		if _, ok := index.evidenceByID[measurement.EvidenceID]; !ok {
 			return fmt.Errorf("%w: %s", ErrInvalidEvidence, measurement.EvidenceID)
 		}
+		if _, reused := seenEvidence[measurement.EvidenceID]; reused {
+			return fmt.Errorf("%w: %s", ErrEvidenceReused, measurement.EvidenceID)
+		}
+		seenEvidence[measurement.EvidenceID] = measurement.ItemID
 	}
 	for _, item := range checklist {
 		measurement, exists := index.measured[item.ID]
