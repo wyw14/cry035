@@ -550,6 +550,7 @@ func (s *MemoryStore) AppendEvent(ctx context.Context, event audit.Event) error 
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	event.Details = cloneDetails(event.Details)
 	s.events = append(s.events, event)
 	return nil
 }
@@ -564,15 +565,83 @@ func (s *MemoryStore) ListEvents(ctx context.Context, entityID string) ([]audit.
 	for _, item := range s.events {
 		if entityID == "" || item.EntityID == entityID {
 			copyItem := item
-			copyItem.Details = make(map[string]any, len(item.Details))
-			for key, value := range item.Details {
-				copyItem.Details[key] = value
-			}
+			copyItem.Details = cloneDetails(item.Details)
 			items = append(items, copyItem)
 		}
 	}
 	sort.SliceStable(items, func(i, j int) bool { return items[i].OccurredAt.Before(items[j].OccurredAt) })
 	return items, nil
+}
+
+// cloneDetails returns a deep copy of an audit event's Details map so that
+// callers reading or mutating the returned value cannot reach into the
+// snapshot stored in memory. Nested maps and slices are copied recursively.
+func cloneDetails(details map[string]any) map[string]any {
+	if details == nil {
+		return nil
+	}
+	clone := make(map[string]any, len(details))
+	for key, value := range details {
+		clone[key] = cloneValue(value)
+	}
+	return clone
+}
+
+func cloneValue(value any) any {
+	switch v := value.(type) {
+	case map[string]any:
+		return cloneDetails(v)
+	case map[string]string:
+		dup := make(map[string]string, len(v))
+		for k, sv := range v {
+			dup[k] = sv
+		}
+		return dup
+	case []any:
+		dup := make([]any, len(v))
+		for i, iv := range v {
+			dup[i] = cloneValue(iv)
+		}
+		return dup
+	case []string:
+		dup := make([]string, len(v))
+		copy(dup, v)
+		return dup
+	case []int:
+		dup := make([]int, len(v))
+		copy(dup, v)
+		return dup
+	case []int64:
+		dup := make([]int64, len(v))
+		copy(dup, v)
+		return dup
+	case []float64:
+		dup := make([]float64, len(v))
+		copy(dup, v)
+		return dup
+	case []bool:
+		dup := make([]bool, len(v))
+		copy(dup, v)
+		return dup
+	case []map[string]any:
+		dup := make([]map[string]any, len(v))
+		for i, iv := range v {
+			dup[i] = cloneDetails(iv)
+		}
+		return dup
+	case []map[string]string:
+		dup := make([]map[string]string, len(v))
+		for i, iv := range v {
+			item := make(map[string]string, len(iv))
+			for k, sv := range iv {
+				item[k] = sv
+			}
+			dup[i] = item
+		}
+		return dup
+	default:
+		return value
+	}
 }
 
 func (s *MemoryStore) SaveAlert(ctx context.Context, item audit.Alert) error {
