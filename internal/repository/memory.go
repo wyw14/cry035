@@ -214,8 +214,9 @@ func (s *MemoryStore) CreatePlan(ctx context.Context, candidate maintenance.Plan
 			return maintenance.Plan{}, false, fmt.Errorf("%w: maintenance window overlaps plan %s", ErrConflict, existing.ID)
 		}
 	}
-	s.plans[candidate.ID] = candidate
-	return candidate, true, nil
+	stored := candidate.Snapshot()
+	s.plans[candidate.ID] = stored
+	return stored.Snapshot(), true, nil
 }
 
 func (s *MemoryStore) ListPlans(ctx context.Context) ([]maintenance.Plan, error) {
@@ -226,7 +227,7 @@ func (s *MemoryStore) ListPlans(ctx context.Context) ([]maintenance.Plan, error)
 	defer s.mu.RUnlock()
 	items := make([]maintenance.Plan, 0, len(s.plans))
 	for _, item := range s.plans {
-		items = append(items, item)
+		items = append(items, item.Snapshot())
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Window.Start.Before(items[j].Window.Start) })
 	return items, nil
@@ -242,7 +243,7 @@ func (s *MemoryStore) GetPlan(ctx context.Context, id string) (maintenance.Plan,
 	if !ok {
 		return maintenance.Plan{}, ErrNotFound
 	}
-	return item, nil
+	return item.Snapshot(), nil
 }
 
 func (s *MemoryStore) TransitionPlan(ctx context.Context, id string, expectedVersion int64, to maintenance.Status, at time.Time) (maintenance.Plan, error) {

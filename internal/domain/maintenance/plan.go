@@ -23,3 +23,9 @@ type Plan struct {
 	CreatedAt      time.Time          `json:"created_at"`
 	UpdatedAt      time.Time          `json:"updated_at"`
 }
+
+func (p Plan) Snapshot() Plan {
+	copyPlan := p
+	copyPlan.Spares = append([]SpareRequirement(nil), p.Spares...)
+	return copyPlan
+}
