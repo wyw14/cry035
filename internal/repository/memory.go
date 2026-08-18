@@ -208,14 +208,19 @@ func (s *MemoryStore) CreatePlan(ctx context.Context, candidate maintenance.Plan
 	}
 	for _, existing := range s.plans {
 		if candidate.GenerationKey != "" && existing.GenerationKey == candidate.GenerationKey {
-			return existing, false, nil
+			duplicate := existing
+			duplicate.Spares = append([]maintenance.SpareRequirement(nil), existing.Spares...)
+			return duplicate, false, nil
 		}
 		if existing.EquipmentID == candidate.EquipmentID && maintenance.BlocksScheduling(existing.Status) && existing.Window.Overlaps(candidate.Window) {
 			return maintenance.Plan{}, false, fmt.Errorf("%w: maintenance window overlaps plan %s", ErrConflict, existing.ID)
 		}
 	}
+	candidate.Spares = append([]maintenance.SpareRequirement(nil), candidate.Spares...)
 	s.plans[candidate.ID] = candidate
-	return candidate, true, nil
+	stored := candidate
+	stored.Spares = append([]maintenance.SpareRequirement(nil), stored.Spares...)
+	return stored, true, nil
 }
 
 func (s *MemoryStore) ListPlans(ctx context.Context) ([]maintenance.Plan, error) {
@@ -226,6 +231,7 @@ func (s *MemoryStore) ListPlans(ctx context.Context) ([]maintenance.Plan, error)
 	defer s.mu.RUnlock()
 	items := make([]maintenance.Plan, 0, len(s.plans))
 	for _, item := range s.plans {
+		item.Spares = append([]maintenance.SpareRequirement(nil), item.Spares...)
 		items = append(items, item)
 	}
 	sort.Slice(items, func(i, j int) bool { return items[i].Window.Start.Before(items[j].Window.Start) })
@@ -242,6 +248,7 @@ func (s *MemoryStore) GetPlan(ctx context.Context, id string) (maintenance.Plan,
 	if !ok {
 		return maintenance.Plan{}, ErrNotFound
 	}
+	item.Spares = append([]maintenance.SpareRequirement(nil), item.Spares...)
 	return item, nil
 }
 
