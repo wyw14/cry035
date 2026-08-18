@@ -79,7 +79,7 @@ func AssessRestoration(restrictionKey string, defects []Defect) RestorationAsses
 	}
 	sort.Strings(assessment.ClosedBlockingIDs)
 	sort.Strings(assessment.OpenBlockingIDs)
-	assessment.Allowed = restrictionKey != "" && len(assessment.ClosedBlockingIDs) > 0
+	assessment.Allowed = restrictionKey != "" && len(assessment.ClosedBlockingIDs) > 0 && len(assessment.OpenBlockingIDs) == 0
 	return assessment
 }
 
