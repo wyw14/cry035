@@ -90,11 +90,12 @@ func (s *Service) Reinspect(ctx context.Context, input Reinspect) (defect.Reinsp
 }
 
 func (s *Service) ReviewReinspection(ctx context.Context, id, reviewer, requestID string) (maintenance.Plan, error) {
-	plan, err := s.repo.MarkReinspectionReviewed(ctx, id, reviewer, s.clock.Now())
+	now := s.clock.Now().UTC()
+	plan, err := s.repo.MarkReinspectionReviewed(ctx, id, reviewer, now)
 	if err != nil {
 		return maintenance.Plan{}, err
 	}
-	_ = s.repo.AppendEvent(ctx, audit.Event{ID: s.ids.New(), EntityType: "equipment", EntityID: plan.EquipmentID, Action: "reinspection_qualified", Actor: reviewer, RequestID: requestID, OccurredAt: s.clock.Now(), Details: map[string]any{"plan_id": plan.ID}})
+	_ = s.repo.AppendEvent(ctx, audit.Event{ID: s.ids.New(), EntityType: "equipment", EntityID: plan.EquipmentID, Action: "reinspection_qualified", Actor: reviewer, RequestID: requestID, OccurredAt: now, Details: map[string]any{"plan_id": plan.ID}})
 	return plan, nil
 }
 
