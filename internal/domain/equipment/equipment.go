@@ -6,6 +6,8 @@ import (
 	"time"
 )
 
+func AlertDeliveryKey(alertID string) string { return "equipment-alert:" + alertID }
+
 type OperatingStatus string
 
 const (
