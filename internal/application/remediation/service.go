@@ -75,6 +75,9 @@ func (s *Service) Reinspect(ctx context.Context, input Reinspect) (defect.Reinsp
 	if len(input.DefectIDs) == 0 {
 		return defect.Reinspection{}, maintenance.Plan{}, fmt.Errorf("at least one defect is required")
 	}
+	if err := validateUniqueDefectIDs(input.DefectIDs); err != nil {
+		return defect.Reinspection{}, maintenance.Plan{}, err
+	}
 	now := s.clock.Now().UTC()
 	item := defect.Reinspection{
 		ID: s.ids.New(), PlanID: input.PlanID, EquipmentID: input.EquipmentID,
@@ -87,6 +90,17 @@ func (s *Service) Reinspect(ctx context.Context, input Reinspect) (defect.Reinsp
 	}
 	_ = s.repo.AppendEvent(ctx, audit.Event{ID: s.ids.New(), EntityType: "equipment", EntityID: input.EquipmentID, Action: "reinspection_recorded", Actor: input.Inspector, RequestID: input.RequestID, OccurredAt: now, Details: map[string]any{"reinspection_id": item.ID, "passed": item.Passed}})
 	return item, plan, nil
+}
+
+func validateUniqueDefectIDs(ids []string) error {
+	seen := make(map[string]struct{}, len(ids))
+	for _, id := range ids {
+		if _, exists := seen[id]; exists {
+			return fmt.Errorf("duplicate defect id: %s", id)
+		}
+		seen[id] = struct{}{}
+	}
+	return nil
 }
 
 func (s *Service) ReviewReinspection(ctx context.Context, id, reviewer, requestID string) (maintenance.Plan, error) {
